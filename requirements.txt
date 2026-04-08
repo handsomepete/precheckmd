@@ -15,3 +15,4 @@ anthropic==0.40.0
 reportlab==4.2.5
 gitpython==3.1.44
 boto3==1.35.88
+fastembed==0.4.2

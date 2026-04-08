@@ -1,8 +1,13 @@
 version: "3.9"
 
+networks:
+  nox_net:
+    name: nox_net
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    networks: [nox_net]
     environment:
       POSTGRES_USER: nox
       POSTGRES_PASSWORD: nox
@@ -19,6 +24,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    networks: [nox_net]
     ports:
       - "6379:6379"
     healthcheck:
@@ -31,6 +37,7 @@ services:
     build:
       context: .
       dockerfile: api/Dockerfile
+    networks: [nox_net]
     env_file: .env
     ports:
       - "8000:8000"
@@ -48,9 +55,15 @@ services:
     build:
       context: .
       dockerfile: worker/Dockerfile
+    networks: [nox_net]
     env_file: .env
+    environment:
+      SANDBOX_IMAGE: nox-sandbox
+      SANDBOX_NETWORK: nox_net
+      SCRATCH_BASE: /tmp/nox_scratch
     volumes:
       - artifacts:/artifacts
+      - /tmp/nox_scratch:/tmp/nox_scratch
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
@@ -58,6 +71,19 @@ services:
       redis:
         condition: service_healthy
     command: rq worker nox --url "${REDIS_URL}"
+
+  # Sandbox image - built but not started as a persistent service.
+  # The worker spawns ephemeral sandbox containers from this image.
+  # Build with: docker-compose build sandbox
+  sandbox:
+    build:
+      context: .
+      dockerfile: sandbox/Dockerfile
+    image: nox-sandbox
+    networks: [nox_net]
+    profiles:
+      - sandbox-build
+    command: ["echo", "sandbox image ready"]
 
 volumes:
   pgdata:
