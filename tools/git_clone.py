@@ -2,6 +2,11 @@
 
 Clone a public git repository into a subdirectory of the scratch dir.
 Only HTTPS URLs are accepted; SSH is blocked.
+
+Known gap: private repository support is not implemented. Clients who need
+to audit private repos will require token-based auth (e.g. GITHUB_TOKEN
+injected into the clone URL or a credential helper). This is a planned
+future capability; do not implement until there is explicit auth design.
 """
 
 import logging

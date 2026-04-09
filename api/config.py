@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # Token budgets (per job)
     max_input_tokens: int = 200_000
-    max_output_tokens: int = 50_000
+    max_output_tokens: int = 100_000
 
     # Wall-clock timeout per job in seconds
     job_timeout_seconds: int = 900  # 15 minutes

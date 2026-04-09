@@ -30,8 +30,11 @@ from tools.write_artifact import write_artifact
 
 logger = logging.getLogger(__name__)
 
-# Default model; override with AGENT_MODEL env var
-_DEFAULT_MODEL = "claude-opus-4-6"
+# Default model; override with AGENT_MODEL env var.
+# Sonnet 4.5 is used (not Opus): it is faster, cheaper, and fits comfortably
+# within the 200k/100k token budget for a typical audit. Opus would burn the
+# output budget in fewer turns on a medium-sized repo.
+_DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 _MODEL = os.environ.get("AGENT_MODEL", _DEFAULT_MODEL)
 
 # Max tokens per individual API response (caps a single turn, not total)
@@ -99,6 +102,9 @@ class TranscriptLogger:
             from db.session import SyncSessionLocal
             self._db = SyncSessionLocal()
         except Exception as exc:
+            # TODO: in production this should raise, not warn. Full agent transcript
+            # per job is part of the trust story for PreCheckMD customers; silently
+            # losing it is a product-level failure, not just a logging gap.
             logger.warning("TranscriptLogger: DB unavailable: %s", exc)
 
     def log(self, role: str, content_type: str, content: dict) -> None:
@@ -269,8 +275,12 @@ TOOL_DEFINITIONS: list[dict] = [
     {
         "name": "write_artifact",
         "description": (
-            "Write a file to the job artifact directory. Use this to save "
-            "intermediate results like findings.json. Returns the absolute path."
+            "Write a file to the job artifact directory. Use this to persist "
+            "findings.json as a downloadable artifact for the client. "
+            "Note: render_pdf receives findings directly as an argument; it does "
+            "NOT read findings.json from disk. So write_artifact and render_pdf "
+            "are independent: write_artifact produces a JSON artifact, render_pdf "
+            "produces the PDF artifact. Call both. Returns the absolute path."
         ),
         "input_schema": {
             "type": "object",
