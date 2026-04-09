@@ -11,7 +11,6 @@ Input payload keys:
 import logging
 
 from worker.runner import register
-from worker.sandbox_runner import run_in_sandbox
 
 logger = logging.getLogger(__name__)
 
@@ -34,4 +33,5 @@ def run(job_id: str, input_payload: dict, db) -> dict:
 
     logger.info("compliance_report: starting sandbox for job %s, repo=%s", job_id, repo_url)
 
+    from worker.sandbox_runner import run_in_sandbox
     return run_in_sandbox(job_id, "compliance_report", input_payload)

@@ -22,11 +22,11 @@ def run(job_id: str, input_payload: dict, db) -> dict:
     logger.info("Dummy job %s: sleeping %ds", job_id, sleep_seconds)
     time.sleep(sleep_seconds)
 
-    # Write a fake text artifact
+    # Write the artifact with the exact content the spec requires
     content = (
-        f"Dummy artifact for job {job_id}\n"
-        f"Completed at: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
-        f"Input: {input_payload}\n"
+        f"hello from job {job_id}\n"
+        f"completed_at: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
+        f"input: {input_payload}\n"
     )
     filename = "dummy_output.txt"
     storage_path = artifact_store.write(job_id, filename, content.encode())
