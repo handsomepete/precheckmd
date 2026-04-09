@@ -27,7 +27,7 @@ _SANDBOX_NETWORK = os.environ.get("SANDBOX_NETWORK", "nox_net")
 _SCRATCH_BASE = os.environ.get("SCRATCH_BASE", "/tmp/nox_scratch")
 
 
-def run_in_sandbox(job_id: str, input_payload: dict) -> dict:
+def run_in_sandbox(job_id: str, job_type: str, input_payload: dict) -> dict:
     """Spawn a sandbox container for *job_id*, wait for it, collect artifacts.
 
     Returns the result_summary dict to be stored on the Job row.
@@ -39,7 +39,7 @@ def run_in_sandbox(job_id: str, input_payload: dict) -> dict:
     # Write the job config into the scratch dir so the container can read it
     config_path = scratch_dir / "job_config.json"
     config_path.write_text(
-        json.dumps({"job_type": input_payload.get("_job_type", ""), "input": input_payload}),
+        json.dumps({"job_type": job_type, "input": input_payload}),
         encoding="utf-8",
     )
 

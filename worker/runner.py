@@ -50,9 +50,15 @@ def run_job(job_id: str) -> None:
 
         try:
             result_summary = runner_fn(job_id, job.input_payload, db)
+            summary = result_summary or {}
             job.status = "completed"
             job.completed_at = datetime.now(timezone.utc)
-            job.result_summary = result_summary or {}
+            job.result_summary = summary
+            # Persist token usage if the sandbox runner reported it
+            if "token_input_used" in summary:
+                job.token_input_used = int(summary["token_input_used"])
+            if "token_output_used" in summary:
+                job.token_output_used = int(summary["token_output_used"])
             db.commit()
             logger.info("Job %s completed", job_id)
         except Exception:

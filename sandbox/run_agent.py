@@ -1,10 +1,10 @@
 """Sandbox agent entry point.
 
-Reads JOB_ID from the environment, loads the job config from
-/scratch/job_config.json, dispatches to the appropriate agent module,
-and exits with 0 on success or 1 on failure.
+Reads JOB_ID and SCRATCH_DIR from the environment, loads job_config.json
+from the scratch directory, dispatches to the correct agent module, and
+exits 0 on success or 1 on failure.
 
-Wired to Claude Agent SDK in Step 5.
+The worker spawns one container per job and waits for this process to exit.
 """
 
 import json
@@ -38,17 +38,20 @@ def main() -> int:
     job_type = config.get("job_type", "")
     input_payload = config.get("input", {})
 
-    logger.info("Running job %s (type=%s)", job_id, job_type)
+    logger.info("Job %s starting (type=%s)", job_id, job_type)
 
-    if job_type == "compliance_report":
-        # Imported here to avoid circular deps and keep startup fast for other types
-        from agents.compliance_report import run as run_compliance
-        run_compliance(job_id=job_id, input_payload=input_payload)
-    else:
-        logger.error("Unknown job_type: %s", job_type)
+    try:
+        if job_type == "compliance_report":
+            from agents.compliance_report import run
+            run(job_id=job_id, input_payload=input_payload)
+        else:
+            logger.error("Unknown job_type: '%s'", job_type)
+            return 1
+    except Exception:
+        logger.exception("Job %s failed", job_id)
         return 1
 
-    logger.info("Job %s finished", job_id)
+    logger.info("Job %s finished successfully", job_id)
     return 0
 
 

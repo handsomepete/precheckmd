@@ -34,8 +34,4 @@ def run(job_id: str, input_payload: dict, db) -> dict:
 
     logger.info("compliance_report: starting sandbox for job %s, repo=%s", job_id, repo_url)
 
-    # Tag the payload so the sandbox knows the job_type
-    payload = dict(input_payload)
-    payload["_job_type"] = "compliance_report"
-
-    return run_in_sandbox(job_id, payload)
+    return run_in_sandbox(job_id, "compliance_report", input_payload)
