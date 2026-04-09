@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # Sonnet 4.5 is used (not Opus): it is faster, cheaper, and fits comfortably
 # within the 200k/100k token budget for a typical audit. Opus would burn the
 # output budget in fewer turns on a medium-sized repo.
-_DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
+_DEFAULT_MODEL = "claude-sonnet-4-6"
 _MODEL = os.environ.get("AGENT_MODEL", _DEFAULT_MODEL)
 
 # Max tokens per individual API response (caps a single turn, not total)
