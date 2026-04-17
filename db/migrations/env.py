@@ -18,6 +18,7 @@ if config.config_file_name is not None:
 
 # Import models so Alembic can detect schema changes
 from db.models import Base  # noqa: E402
+from physical import models as _physical_models  # noqa: F401, E402
 
 target_metadata = Base.metadata
 
