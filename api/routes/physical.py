@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import require_api_key
 from api.deps import get_db
+from financial.projection import available_budget as financial_available_budget
 from physical.constraints import ConstraintReport
 from physical.events import PhysicalEventType
 from physical.models import (
@@ -366,17 +367,18 @@ async def get_recommendations(db: AsyncSession = Depends(get_db)) -> dict[str, A
 async def create_procurement(
     payload: ProcurementIn, db: AsyncSession = Depends(get_db)
 ) -> ProcurementOut:
+    budget = (
+        Decimal(str(payload.available_budget))
+        if payload.available_budget is not None
+        else await financial_available_budget(db)
+    )
     try:
         request = await request_procurement(
             db,
             item_id=payload.item_id,
             quantity=Decimal(str(payload.quantity)),
             reason=payload.reason,
-            available_budget=(
-                Decimal(str(payload.available_budget))
-                if payload.available_budget is not None
-                else None
-            ),
+            available_budget=budget,
         )
     except ConstraintViolation as exc:
         await db.rollback()
@@ -402,15 +404,16 @@ async def approve_procurement_route(
     payload: ProcurementApproveIn,
     db: AsyncSession = Depends(get_db),
 ) -> ProcurementOut:
+    budget = (
+        Decimal(str(payload.available_budget))
+        if payload.available_budget is not None
+        else await financial_available_budget(db)
+    )
     try:
         request = await approve_procurement(
             db,
             request_id=request_id,
-            available_budget=(
-                Decimal(str(payload.available_budget))
-                if payload.available_budget is not None
-                else None
-            ),
+            available_budget=budget,
         )
     except ConstraintViolation as exc:
         await db.rollback()
