@@ -21,6 +21,7 @@ from db.models import Base  # noqa: E402
 from physical import models as _physical_models  # noqa: F401, E402
 from financial import models as _financial_models  # noqa: F401, E402
 from operational import models as _operational_models  # noqa: F401, E402
+from openclaw import audit as _openclaw_audit  # noqa: F401, E402
 
 target_metadata = Base.metadata
 

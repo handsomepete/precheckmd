@@ -9,6 +9,7 @@ from api.routes.health import router as health_router
 from api.routes.jobs import router as jobs_router
 from api.routes.operational import router as operational_router
 from api.routes.physical import router as physical_router
+from api.routes.system import router as system_router
 
 
 @asynccontextmanager
@@ -30,3 +31,4 @@ app.include_router(jobs_router)
 app.include_router(physical_router)
 app.include_router(financial_router)
 app.include_router(operational_router)
+app.include_router(system_router)
