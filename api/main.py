@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from api.routes.health import router as health_router
 from api.routes.jobs import router as jobs_router
+from api.routes.physical import router as physical_router
 
 
 @asynccontextmanager
@@ -24,3 +25,4 @@ app = FastAPI(
 
 app.include_router(health_router)
 app.include_router(jobs_router)
+app.include_router(physical_router)
