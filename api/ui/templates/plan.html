@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}HomeOS · Plan{% endblock %}
+{% block content %}
+
+<h1 class="font-semibold mb-4">Plan &amp; Execute</h1>
+
+<div class="card p-4 mb-4">
+  <label class="block text-xs text-slate-400 mb-1.5">Goal</label>
+  <form hx-post="/ui/plan/propose"
+        hx-target="#plan-result"
+        hx-swap="innerHTML"
+        hx-indicator="#plan-spinner"
+        class="flex gap-2">
+    <input type="text" name="goal" id="goal-input"
+           placeholder="check why home-assistant restarted at 03:14"
+           class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <button type="submit" class="btn shrink-0">
+      <span id="plan-spinner" class="htmx-indicator mr-1">⏳</span>Propose
+    </button>
+  </form>
+</div>
+
+<div id="plan-result"></div>
+
+{% endblock %}

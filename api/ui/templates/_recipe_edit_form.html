@@ -1,0 +1,87 @@
+{# Partial: editable recipe form rendered after OCR. Submitted via /ui/recipes POST. #}
+{% if dry_run %}
+<div class="bg-amber-900/30 border border-amber-700/50 text-amber-300 text-xs rounded-lg px-3 py-2 mb-3">
+  Dry-run mode — ANTHROPIC_API_KEY not set. Using stub data.
+</div>
+{% endif %}
+
+<form method="post" action="/ui/recipes" class="space-y-4">
+
+  <div>
+    <label class="block mb-1">Recipe name</label>
+    <input type="text" name="name" value="{{ title }}" required>
+  </div>
+
+  <div class="grid grid-cols-2 gap-3">
+    <div>
+      <label class="block mb-1">Servings</label>
+      <input type="number" name="yield_servings" value="{{ yield_servings or '' }}" min="1">
+    </div>
+    <div>
+      <label class="block mb-1">Prep time (min)</label>
+      <input type="number" name="prep_time_minutes" value="{{ prep_time_minutes or '' }}" min="1">
+    </div>
+  </div>
+
+  <div>
+    <div class="flex items-center justify-between mb-2">
+      <label>Ingredients</label>
+      <button type="button" onclick="addRow()" class="text-xs text-blue-400 hover:text-blue-300">+ add row</button>
+    </div>
+    <div id="ing-list" class="space-y-2">
+      {% for ing in ingredients %}
+      <div class="flex items-start gap-2 ing-row">
+        <div class="flex-1 min-w-0">
+          <input type="text" name="ing_name" value="{{ ing.name }}" placeholder="ingredient">
+        </div>
+        <div class="w-16 shrink-0">
+          <input type="number" name="ing_qty" value="{{ ing.quantity or '' }}" step="any" placeholder="qty">
+        </div>
+        <div class="w-14 shrink-0">
+          <input type="text" name="ing_unit" value="{{ ing.unit or 'ea' }}" placeholder="unit">
+        </div>
+        <div class="flex-1 min-w-0">
+          <select name="ing_item_id">
+            <option value="">{% if ing.item_name %}{{ ing.item_name }} ✓{% else %}unmatched{% endif %}</option>
+            {% for item_id, item in items.items() %}
+            <option value="{{ item_id }}" {% if item_id == ing.item_id %}selected{% endif %}>{{ item.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="button" onclick="this.closest('.ing-row').remove()" class="text-slate-500 hover:text-red-400 mt-1.5 shrink-0">✕</button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div>
+    <label class="block mb-1">Instructions (one step per line)</label>
+    <textarea name="instructions" rows="6" class="text-sm">{{ instructions | join('\n') }}</textarea>
+  </div>
+
+  <div class="flex gap-3">
+    <button type="submit" class="btn flex-1">Save recipe</button>
+    <a href="/ui/recipes/new" class="btn-ghost flex-1 text-center text-sm">Re-scan</a>
+  </div>
+</form>
+
+<script>
+function addRow() {
+  const list = document.getElementById('ing-list');
+  const tmpl = list.querySelector('.ing-row');
+  const clone = tmpl ? tmpl.cloneNode(true) : buildBlankRow();
+  if (tmpl) clone.querySelectorAll('input').forEach(i => i.value = '');
+  list.appendChild(clone);
+}
+function buildBlankRow() {
+  const div = document.createElement('div');
+  div.className = 'flex items-start gap-2 ing-row';
+  div.innerHTML = `
+    <div class="flex-1 min-w-0"><input type="text" name="ing_name" placeholder="ingredient" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:.375rem;padding:.375rem .5rem;width:100%"></div>
+    <div class="w-16 shrink-0"><input type="number" name="ing_qty" step="any" placeholder="qty" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:.375rem;padding:.375rem .5rem;width:100%"></div>
+    <div class="w-14 shrink-0"><input type="text" name="ing_unit" placeholder="ea" value="ea" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:.375rem;padding:.375rem .5rem;width:100%"></div>
+    <div class="flex-1 min-w-0"><select name="ing_item_id" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:.375rem;padding:.375rem .5rem;width:100%"><option value="">unmatched</option></select></div>
+    <button type="button" onclick="this.closest('.ing-row').remove()" style="color:#64748b;margin-top:.375rem;flex-shrink:0">✕</button>`;
+  return div;
+}
+</script>

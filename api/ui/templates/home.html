@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}HomeOS · State{% endblock %}
+{% block content %}
+
+{% if snap.violations %}
+<div class="mb-4 space-y-1.5">
+  {% for v in snap.violations %}
+  <div class="flex items-start gap-2 bg-red-900/30 border border-red-800/60 rounded-lg px-3 py-2 text-sm">
+    <span class="text-red-400 mt-0.5 shrink-0">⚠</span>
+    <span><span class="text-red-300 font-medium">{{ v.domain }}</span> · {{ v.message }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="grid grid-cols-2 gap-3 mb-4">
+  <div class="card p-4">
+    <div class="text-xs text-slate-400 mb-1">Inventory lots</div>
+    <div class="text-2xl font-semibold">{{ snap.physical.lots | length }}</div>
+  </div>
+  <div class="card p-4">
+    <div class="text-xs text-slate-400 mb-1">Available budget</div>
+    <div class="text-2xl font-semibold text-green-400">${{ snap.financial.available_budget | qty }}</div>
+  </div>
+  <div class="card p-4">
+    <div class="text-xs text-slate-400 mb-1">Active tasks</div>
+    <div class="text-2xl font-semibold">{{ snap.operational.tasks | length }}</div>
+  </div>
+  <div class="card p-4">
+    <div class="text-xs text-slate-400 mb-1">Violations</div>
+    <div class="text-2xl font-semibold {% if snap.violations %}text-red-400{% else %}text-green-400{% endif %}">
+      {{ snap.violations | length }}
+    </div>
+  </div>
+</div>
+
+{% if snap.physical.near_expiry %}
+<section class="mb-4">
+  <h2 class="text-sm font-medium text-slate-300 mb-2">Expiring soon</h2>
+  <div class="space-y-1.5">
+    {% for lot in snap.physical.near_expiry %}
+    <div class="card px-3 py-2 flex items-center justify-between">
+      <div>
+        <span class="text-sm">{{ snap.physical.items[lot.item_id].name if lot.item_id in snap.physical.items else lot.item_id }}</span>
+        <span class="text-xs text-slate-400 ml-1">{{ snap.physical.nodes[lot.storage_node_id].name if lot.storage_node_id in snap.physical.nodes else '' }}</span>
+      </div>
+      <div class="text-right">
+        <span class="text-sm">{{ lot.quantity | qty }}</span>
+        <span class="pill pill-amber ml-2">{{ lot.expires_at | d }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if snap.physical.low_stock %}
+<section class="mb-4">
+  <h2 class="text-sm font-medium text-slate-300 mb-2">Low stock</h2>
+  <div class="space-y-1.5">
+    {% for row in snap.physical.low_stock %}
+    <div class="card px-3 py-2 flex items-center justify-between">
+      <span class="text-sm">{{ row.item.name }}</span>
+      <div class="flex items-center gap-2">
+        <span class="text-sm text-amber-400">{{ row.quantity | qty }} {{ row.item.unit }}</span>
+        <span class="text-xs text-slate-500">/ {{ row.threshold | qty }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if snap.financial.obligations %}
+<section>
+  <h2 class="text-sm font-medium text-slate-300 mb-2">Obligations</h2>
+  <div class="space-y-1.5">
+    {% for ob in snap.financial.obligations %}
+    {% if not ob.cancelled %}
+    <div class="card px-3 py-2 flex items-center justify-between">
+      <div>
+        <span class="text-sm">{{ ob.name }}</span>
+        <span class="pill pill-gray ml-2">T{{ ob.tier }}</span>
+      </div>
+      <div class="text-right text-sm">
+        ${{ ob.amount | qty }}
+        <span class="text-xs text-slate-400 ml-1">{{ ob.due_date | d }}</span>
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

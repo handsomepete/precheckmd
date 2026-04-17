@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}HomeOS · Inventory{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-4">
+  <h1 class="font-semibold">Inventory</h1>
+</div>
+
+{% if snap.physical.lots %}
+<div class="space-y-1.5">
+  {% for lot in snap.physical.lots %}
+  {% if lot.quantity > 0 %}
+  <div class="card px-3 py-2.5">
+    <div class="flex items-center justify-between">
+      <div>
+        <span class="text-sm font-medium">
+          {{ snap.physical.items[lot.item_id].name if lot.item_id in snap.physical.items else lot.item_id }}
+        </span>
+        <span class="text-xs text-slate-400 ml-1.5">
+          {{ snap.physical.nodes[lot.storage_node_id].name if lot.storage_node_id in snap.physical.nodes else '' }}
+        </span>
+      </div>
+      <div class="flex items-center gap-2 text-sm">
+        <span>{{ lot.quantity | qty }}
+          {% if lot.item_id in snap.physical.items %}{{ snap.physical.items[lot.item_id].unit }}{% endif %}
+        </span>
+        {% if lot.expires_at %}
+        <span class="pill pill-amber">{{ lot.expires_at | d }}</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="text-slate-400 text-sm py-8 text-center">No inventory recorded yet.</div>
+  {% endfor %}
+</div>
+
+{% if snap.physical.violations %}
+<div class="mt-4 space-y-1.5">
+  {% for v in snap.physical.violations %}
+  <div class="bg-red-900/30 border border-red-800/60 rounded-lg px-3 py-2 text-sm text-red-300">
+    {{ v.message }}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="text-slate-400 text-sm py-8 text-center">No inventory recorded yet.</div>
+{% endif %}
+
+<section class="mt-6">
+  <h2 class="text-sm font-medium text-slate-300 mb-2">Item catalog ({{ snap.physical.items | length }})</h2>
+  <div class="grid grid-cols-2 gap-2">
+    {% for item in snap.physical.items.values() %}
+    <div class="card px-3 py-2 text-sm">
+      <div class="font-medium truncate">{{ item.name }}</div>
+      <div class="text-xs text-slate-400">{{ item.unit }} · ${{ item.unit_cost | qty }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% endblock %}

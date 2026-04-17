@@ -1,0 +1,79 @@
+{# Partial: candidate plan with per-action validation, inline approve, and execute button. #}
+<div class="card p-4 mb-3">
+  <div class="flex items-center justify-between mb-3">
+    <div class="text-sm font-medium">Candidate plan</div>
+    <div class="flex items-center gap-2">
+      {% if planner.dry_run %}
+      <span class="pill pill-amber">dry-run</span>
+      {% endif %}
+      <span class="pill pill-gray text-xs">{{ planner.model }}</span>
+      {% if validation.ok %}
+      <span class="pill pill-green">valid</span>
+      {% else %}
+      <span class="pill pill-amber">needs approval</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if plan.actions %}
+  <form hx-post="/ui/plan/execute"
+        hx-target="#execute-result"
+        hx-swap="innerHTML"
+        hx-indicator="#exec-spinner">
+    <input type="hidden" name="plan_json" value="{{ plan | tojson | e }}">
+
+    <div class="space-y-2 mb-4">
+      {% for action in plan.actions %}
+      {% set dec = validation.decisions | selectattr('action_id', 'eq', action.id) | first | default(None) %}
+      <div class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0">
+            <span class="text-xs font-mono text-blue-400">{{ action.target }}</span>
+            <span class="text-xs text-slate-400 mx-1">›</span>
+            <span class="text-sm font-medium">{{ action.operation }}</span>
+            {% if action.parameters %}
+            <div class="text-xs text-slate-400 mt-0.5 font-mono truncate">
+              {% for k, v in action.parameters.items() %}{{ k }}={{ v }} {% endfor %}
+            </div>
+            {% endif %}
+            <div class="text-xs text-slate-500 mt-0.5">{{ action.expected_outcome }}</div>
+          </div>
+          <div class="flex flex-col items-end gap-1.5 shrink-0">
+            {% if dec %}
+            {% if dec.risk == 'low' %}
+            <span class="pill pill-green">low</span>
+            {% elif dec.risk == 'medium' %}
+            <span class="pill pill-amber">medium</span>
+            {% else %}
+            <span class="pill pill-red">high</span>
+            {% endif %}
+            {% endif %}
+            {% if dec and dec.approval_required %}
+            <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+              <input type="checkbox" name="approvals" value="{{ action.id }}"
+                     class="rounded accent-blue-500"> approve
+            </label>
+            {% endif %}
+          </div>
+        </div>
+        {% if dec and dec.issues %}
+        <div class="mt-1.5 space-y-0.5">
+          {% for issue in dec.issues %}
+          <div class="text-xs text-amber-400">⚠ {{ issue.message }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    <button type="submit" class="btn w-full">
+      <span id="exec-spinner" class="htmx-indicator mr-1">⏳</span>Execute plan
+    </button>
+  </form>
+  {% else %}
+  <div class="text-slate-400 text-sm text-center py-4">Empty plan returned.</div>
+  {% endif %}
+</div>
+
+<div id="execute-result"></div>

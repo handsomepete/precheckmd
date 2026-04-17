@@ -1,0 +1,33 @@
+{# Partial: HTMX swap target after cooking a recipe. #}
+{% if outcome.ok %}
+<div class="bg-green-900/30 border border-green-700/50 rounded-lg px-4 py-3 text-sm text-green-300 mb-3">
+  Cooked successfully — inventory updated.
+</div>
+{% else %}
+<div class="bg-red-900/30 border border-red-700/50 rounded-lg px-4 py-3 text-sm text-red-300 mb-3">
+  Cooking stopped — not all ingredients could be consumed.
+</div>
+{% endif %}
+
+<div class="space-y-1.5">
+  {% for r in outcome.results %}
+  <div class="card px-3 py-2 flex items-center justify-between">
+    <span class="text-sm">{{ r.display_name }}</span>
+    <div class="flex items-center gap-2">
+      <span class="text-sm text-slate-400">{{ r.quantity | qty }}</span>
+      {% if r.status == 'consumed' %}
+      <span class="pill pill-green">consumed</span>
+      {% elif r.status == 'unmatched' %}
+      <span class="pill pill-gray">unmatched</span>
+      {% elif r.status == 'insufficient' %}
+      <span class="pill pill-red">insufficient</span>
+      {% elif r.status == 'skipped' %}
+      <span class="pill pill-gray">skipped</span>
+      {% endif %}
+    </div>
+  </div>
+  {% if r.error %}
+  <div class="text-xs text-red-400 px-3">{{ r.error }}</div>
+  {% endif %}
+  {% endfor %}
+</div>

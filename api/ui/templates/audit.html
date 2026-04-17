@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}HomeOS · Audit{% endblock %}
+{% block content %}
+
+<h1 class="font-semibold mb-4">Audit Log</h1>
+
+{% if rows %}
+<div class="space-y-1.5">
+  {% for r in rows %}
+  <div class="card px-3 py-2.5">
+    <div class="flex items-start justify-between gap-2">
+      <div class="min-w-0">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <span class="text-xs font-mono text-blue-400">{{ r.target }}</span>
+          <span class="text-xs text-slate-500">›</span>
+          <span class="text-sm font-medium">{{ r.operation }}</span>
+          {% if r.dry_run %}<span class="pill pill-gray">dry</span>{% endif %}
+        </div>
+        <div class="text-xs text-slate-500 mt-0.5 font-mono truncate">
+          {{ r.action_id }} · plan <span class="text-slate-600">{{ r.plan_id[:8] }}…</span>
+        </div>
+        {% if r.error %}
+        <div class="text-xs text-red-400 mt-0.5">{{ r.error }}</div>
+        {% endif %}
+      </div>
+      <div class="flex flex-col items-end gap-1 shrink-0">
+        {% if r.outcome == 'success' %}
+        <span class="pill pill-green">success</span>
+        {% elif r.outcome == 'failure' %}
+        <span class="pill pill-red">failed</span>
+        {% elif r.outcome == 'rejected' %}
+        <span class="pill pill-red">rejected</span>
+        {% elif r.outcome == 'skipped' %}
+        <span class="pill pill-gray">skipped</span>
+        {% else %}
+        <span class="pill pill-amber">{{ r.outcome }}</span>
+        {% endif %}
+        {% if r.risk_level == 'high' %}
+        <span class="pill pill-red">high</span>
+        {% elif r.risk_level == 'medium' %}
+        <span class="pill pill-amber">medium</span>
+        {% endif %}
+        <span class="text-xs text-slate-500">{{ r.started_at | dt }}</span>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-16 text-slate-400">
+  <div class="text-4xl mb-3">≡</div>
+  <div class="font-medium">No actions executed yet</div>
+  <p class="text-sm mt-1">Use Plan to propose and run your first action.</p>
+</div>
+{% endif %}
+
+{% endblock %}

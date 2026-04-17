@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}HomeOS · Ingest Recipe{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-3 mb-5">
+  <a href="/ui/recipes" class="text-slate-400 hover:text-slate-200">←</a>
+  <h1 class="font-semibold">Ingest Recipe Card</h1>
+</div>
+
+<div id="upload-area" class="card p-6 mb-4">
+  <label for="card-input" class="block cursor-pointer">
+    <div class="flex flex-col items-center gap-3 text-center">
+      <div class="text-5xl text-slate-500">◎</div>
+      <div>
+        <div class="font-medium text-sm">Tap to snap or choose a card photo</div>
+        <div class="text-xs text-slate-400 mt-0.5">JPEG, PNG, HEIC · max 10 MB</div>
+      </div>
+    </div>
+    <input id="card-input" type="file" accept="image/*" capture="environment" class="hidden"
+           onchange="previewAndOcr(this)">
+  </label>
+  <div id="preview-wrap" class="hidden mt-4">
+    <img id="preview-img" class="rounded-lg max-h-48 mx-auto object-contain" src="" alt="card preview">
+  </div>
+</div>
+
+<div id="ocr-status" class="text-xs text-slate-400 text-center mb-3 hidden">
+  <span class="inline-block animate-pulse">Extracting recipe with Claude Vision…</span>
+</div>
+
+<div id="ocr-result"></div>
+
+<script>
+async function previewAndOcr(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  // Preview
+  const wrap = document.getElementById('preview-wrap');
+  const img  = document.getElementById('preview-img');
+  img.src = URL.createObjectURL(file);
+  wrap.classList.remove('hidden');
+
+  // OCR via HTMX-style fetch
+  document.getElementById('ocr-status').classList.remove('hidden');
+  document.getElementById('ocr-result').innerHTML = '';
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  const resp = await fetch('/ui/recipes/ocr', {
+    method: 'POST',
+    body: fd,
+    credentials: 'same-origin',
+  });
+  document.getElementById('ocr-status').classList.add('hidden');
+
+  const html = await resp.text();
+  document.getElementById('ocr-result').innerHTML = html;
+}
+</script>
+
+{% endblock %}

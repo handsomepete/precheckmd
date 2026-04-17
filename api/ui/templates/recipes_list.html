@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}HomeOS · Recipes{% endblock %}
+{% block header_actions %}
+<a href="/ui/recipes/new" class="btn text-sm px-3 py-1.5">+ Ingest</a>
+{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-4">
+  <h1 class="font-semibold">Recipes</h1>
+  <a href="/ui/recipes/new" class="btn text-sm">+ Ingest card</a>
+</div>
+
+{% if recipes %}
+<div class="space-y-2">
+  {% for r in recipes %}
+  <a href="/ui/recipes/{{ r.id }}" class="card block px-4 py-3 hover:border-slate-600 transition-colors">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="font-medium text-sm">{{ r.name }}</div>
+        <div class="text-xs text-slate-400 mt-0.5">
+          {% if r.yield_servings %}{{ r.yield_servings }} servings{% endif %}
+          {% if r.prep_time_minutes %}· {{ r.prep_time_minutes }} min{% endif %}
+          · {{ r.ingredients | length }} ingredients
+        </div>
+      </div>
+      <div class="text-slate-500 text-lg">›</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-16 text-slate-400">
+  <div class="text-4xl mb-3">◎</div>
+  <div class="font-medium mb-1">No recipes yet</div>
+  <p class="text-sm mb-4">Snap a HelloFresh card to get started.</p>
+  <a href="/ui/recipes/new" class="btn inline-block">Ingest a card</a>
+</div>
+{% endif %}
+
+{% endblock %}

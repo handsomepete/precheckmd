@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <title>{% block title %}HomeOS{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    html { -webkit-text-size-adjust: 100%; }
+    body { padding-bottom: env(safe-area-inset-bottom); }
+    .tab { color: #94a3b8; }
+    .tab.active { color: #f8fafc; }
+    .card { background: #0b1220; border: 1px solid #1e293b; border-radius: 0.75rem; }
+    .btn { background: #2563eb; color: white; font-weight: 500; padding: 0.625rem 1rem; border-radius: 0.5rem; }
+    .btn:disabled { opacity: 0.5; }
+    .btn-ghost { background: transparent; border: 1px solid #334155; color: #e2e8f0; font-weight: 500; padding: 0.5rem 0.875rem; border-radius: 0.5rem; }
+    .pill { display: inline-flex; align-items: center; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; }
+    .pill-green { background: rgba(34, 197, 94, 0.15); color: #86efac; }
+    .pill-amber { background: rgba(245, 158, 11, 0.15); color: #fcd34d; }
+    .pill-red   { background: rgba(239, 68, 68, 0.15);   color: #fca5a5; }
+    .pill-gray  { background: rgba(100, 116, 139, 0.2);  color: #cbd5e1; }
+    input, select, textarea { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; border-radius: 0.375rem; padding: 0.375rem 0.5rem; width: 100%; }
+    input:focus, select:focus, textarea:focus { outline: 2px solid #3b82f6; outline-offset: 1px; }
+    label { color: #cbd5e1; font-size: 0.8rem; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <header class="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
+    <div class="max-w-4xl mx-auto flex items-center justify-between px-4 py-3">
+      <a href="/ui/home" class="font-semibold tracking-tight">HomeOS</a>
+      <div class="flex items-center gap-3 text-sm">
+        {% block header_actions %}{% endblock %}
+        <a href="/ui/logout" class="text-slate-400 hover:text-slate-200">logout</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto px-4 py-4 pb-24">
+    {% block content %}{% endblock %}
+  </main>
+
+  <nav class="fixed bottom-0 inset-x-0 border-t border-slate-800 bg-slate-950/95 backdrop-blur">
+    <div class="max-w-4xl mx-auto grid grid-cols-5 text-xs">
+      <a href="/ui/home"      class="tab {% if page == 'home' %}active{% endif %} flex flex-col items-center py-2.5">
+        <span class="text-base">◉</span><span>State</span>
+      </a>
+      <a href="/ui/inventory" class="tab {% if page == 'inventory' %}active{% endif %} flex flex-col items-center py-2.5">
+        <span class="text-base">▦</span><span>Inventory</span>
+      </a>
+      <a href="/ui/recipes"   class="tab {% if page == 'recipes' %}active{% endif %} flex flex-col items-center py-2.5">
+        <span class="text-base">◎</span><span>Recipes</span>
+      </a>
+      <a href="/ui/plan"      class="tab {% if page == 'plan' %}active{% endif %} flex flex-col items-center py-2.5">
+        <span class="text-base">◈</span><span>Plan</span>
+      </a>
+      <a href="/ui/audit"     class="tab {% if page == 'audit' %}active{% endif %} flex flex-col items-center py-2.5">
+        <span class="text-base">≡</span><span>Audit</span>
+      </a>
+    </div>
+  </nav>
+</body>
+</html>
