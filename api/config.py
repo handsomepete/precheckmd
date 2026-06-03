@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     artifact_dir: str = "/artifacts"
     api_key: str = "changeme-api-key"
 
+    # YNAB integration
+    ynab_api_token: str = ""
+    ynab_budget_id: str = "last-used"
+
     # Token budgets (per job)
     max_input_tokens: int = 200_000
     max_output_tokens: int = 50_000
