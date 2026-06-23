@@ -13,6 +13,7 @@
  */
 
 require('dotenv').config();
+const fs = require('fs');
 const { GoogleAuth } = require('google-auth-library');
 const express = require('express');
 const axios = require('axios');
@@ -188,7 +189,7 @@ async function closeLinearIssue(issueId, comment) {
 async function getCalendarAuth() {
   const keyPath = process.env.GOOGLE_SERVICE_ACCOUNT_PATH;
   if (!keyPath) throw new Error('GOOGLE_SERVICE_ACCOUNT_PATH not set in .env');
-  const credentials = JSON.parse(require('fs').readFileSync(keyPath, 'utf8'));
+  const credentials = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
   const auth = new GoogleAuth({
     credentials,
     scopes: ['https://www.googleapis.com/auth/calendar.readonly'],
@@ -564,6 +565,27 @@ async function getEmail({ uid }) {
   } finally { lock.release(); await client.logout(); }
 }
 
+async function sendSelfEmail({ subject, body_text }) {
+  if (!GMAIL_USER || !GMAIL_PASS) throw new Error('GMAIL_USER or GMAIL_APP_PASSWORD not set');
+  const client = makeImapClient();
+  await client.connect();
+  try {
+    const message = [
+      `MIME-Version: 1.0`,
+      `Date: ${new Date().toUTCString()}`,
+      `From: ${GMAIL_USER}`,
+      `To: ${GMAIL_USER}`,
+      `Subject: ${subject}`,
+      `Content-Type: text/plain; charset=UTF-8`,
+      ``,
+      body_text,
+    ].join('\r\n');
+    await client.append('INBOX', Buffer.from(message, 'utf8'));
+  } finally {
+    await client.logout();
+  }
+}
+
 async function createGmailDraft({ to, subject, body_html, body_text }) {
   if (!GMAIL_USER || !GMAIL_PASS) throw new Error('GMAIL_USER or GMAIL_APP_PASSWORD not set');
   const client = makeImapClient();
@@ -660,12 +682,72 @@ async function addLinearComment({ issue_id, body }) {
 }
 
 // ─── Utility helpers ──────────────────────────────────────────────────────────
+function getBriefLogPath(type) {
+  return process.env.COWORK_LOG_FILE || `/tmp/cowork-${type}-brief.log`;
+}
+
 async function runBrief({ type = 'morning' }) {
   if (!['morning', 'evening', 'weekly'].includes(type)) throw new Error('type must be morning, evening, or weekly');
   const flag = '--' + (type === 'weekly' ? 'morning' : type);
-  const proc = spawn('/var/www/cowork/venv/bin/python', ['-m', 'cowork.main', flag], { cwd: '/var/www/cowork', env: { ...process.env, PYTHONPATH: '/var/www' }, detached: true, stdio: 'ignore' });
+
+  // Clear stale lock before spawning if COWORK_LOCK_FILE is configured
+  const lockFile = process.env.COWORK_LOCK_FILE;
+  if (lockFile) {
+    try {
+      const stat = fs.statSync(lockFile);
+      const ageHours = (Date.now() - stat.mtimeMs) / 3600000;
+      const maxAge = parseFloat(process.env.COWORK_LOCK_MAX_AGE_HOURS || '2');
+      if (ageHours > maxAge) {
+        fs.unlinkSync(lockFile);
+        console.log(`[run_brief] cleared stale lock (age ${ageHours.toFixed(1)}h): ${lockFile}`);
+      }
+    } catch (e) {
+      if (e.code !== 'ENOENT') console.error('[run_brief] lock check error:', e.message);
+    }
+  }
+
+  // Log to file so crashes leave evidence
+  const logPath = getBriefLogPath(type);
+  let logFd = null;
+  try {
+    logFd = fs.openSync(logPath, 'a');
+    fs.writeSync(logFd, `\n=== run_brief(${type}) started at ${new Date().toISOString()} ===\n`);
+  } catch (e) {
+    logFd = null;
+    console.error('[run_brief] cannot open log file:', e.message);
+  }
+
+  const stdio = logFd != null ? ['ignore', logFd, logFd] : 'ignore';
+  const proc = spawn('/var/www/cowork/venv/bin/python', ['-m', 'cowork.main', flag], {
+    cwd: '/var/www/cowork',
+    env: { ...process.env, PYTHONPATH: '/var/www' },
+    detached: true,
+    stdio,
+  });
   proc.unref();
-  return { ok: true, type, message: type + ' brief started — draft appears in Gmail within 10-30 min' };
+
+  // Guardian: if process exits non-zero, deliver a BRIEF FAILED to INBOX
+  proc.on('close', async (code) => {
+    const exitLine = `=== process exited code=${code} at ${new Date().toISOString()} ===\n`;
+    if (logFd != null) {
+      try { fs.writeSync(logFd, exitLine); fs.closeSync(logFd); } catch (_) {}
+    }
+    if (code !== 0) {
+      let logTail = '';
+      try {
+        const content = fs.readFileSync(logPath, 'utf8');
+        logTail = content.split('\n').slice(-40).join('\n');
+      } catch (_) {}
+      const today = new Date().toISOString().split('T')[0];
+      const subject = `BRIEF FAILED: ${type} ${today}`;
+      const body = `The ${type} brief pipeline exited with code ${code}.\nTime: ${new Date().toISOString()}\n\nLast log output:\n${logTail || '(no log captured)'}`;
+      await sendSelfEmail({ subject, body_text: body }).catch(err => {
+        console.error('[run_brief] failed to send BRIEF FAILED notification:', err.message);
+      });
+    }
+  });
+
+  return { ok: true, type, message: `${type} brief started — draft appears in Gmail within 10-30 min` };
 }
 
 async function fetchUrl({ url }) {
@@ -779,6 +861,8 @@ const MCP_TOOLS = [
   { name: 'get_home_automations', description: 'List all Home Assistant automations', inputSchema: { type: 'object', properties: {} } },
   // ── Utility ───────────────────────────────────────────────────────────────────
   { name: 'run_brief', description: 'Trigger a morning or evening brief pipeline', inputSchema: { type: 'object', properties: { type: { type: 'string', enum: ['morning', 'evening'] } }, required: ['type'] } },
+  { name: 'get_brief_log', description: 'Return the last N lines of the brief pipeline log for diagnosis', inputSchema: { type: 'object', properties: { type: { type: 'string', enum: ['morning', 'evening'], description: 'Which brief log to read' }, lines: { type: 'number', description: 'Number of tail lines to return (default 60)' } } } },
+  { name: 'clear_brief_lock', description: 'Delete the cowork run-lock file to unblock a stuck pipeline (requires COWORK_LOCK_FILE env)', inputSchema: { type: 'object', properties: {} } },
   { name: 'fetch_url', description: 'Fetch the text content of a URL (strips HTML)', inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } },
 ];
 
@@ -859,6 +943,32 @@ function _createMcpServer() {
         // ── Utility ────────────────────────────────────────────────────────────
         case 'fetch_url': { data = await fetchUrl(args); break; }
         case 'run_brief': { data = await runBrief(args); break; }
+        case 'get_brief_log': {
+          const logType = args.type || 'morning';
+          const n = args.lines || 60;
+          const logPath = getBriefLogPath(logType);
+          let lines = '(log file not found)';
+          try {
+            const content = fs.readFileSync(logPath, 'utf8');
+            lines = content.split('\n').slice(-n).join('\n');
+          } catch (e) {
+            lines = `Error reading ${logPath}: ${e.message}`;
+          }
+          data = { log_path: logPath, tail: lines };
+          break;
+        }
+        case 'clear_brief_lock': {
+          const lf = process.env.COWORK_LOCK_FILE;
+          if (!lf) throw new Error('COWORK_LOCK_FILE env not set — cannot clear lock');
+          try {
+            fs.unlinkSync(lf);
+            data = { ok: true, cleared: lf };
+          } catch (e) {
+            if (e.code === 'ENOENT') data = { ok: true, message: 'Lock file did not exist', path: lf };
+            else throw e;
+          }
+          break;
+        }
         default: throw new Error(`Unknown tool: ${name}`);
       }
       return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
@@ -882,6 +992,19 @@ app.post('/mcp', async (req, res) => {
 });
 
 app.get('/mcp', (req, res) => res.status(405).json({ error: 'Use POST for MCP' }));
+
+app.get('/brief/last-log', auth, (req, res) => {
+  const type = req.query.type || 'morning';
+  const lines = parseInt(req.query.lines || '80', 10);
+  const logPath = getBriefLogPath(type);
+  try {
+    const content = fs.readFileSync(logPath, 'utf8');
+    const tail = content.split('\n').slice(-lines).join('\n');
+    res.json({ log_path: logPath, tail });
+  } catch (e) {
+    res.status(404).json({ error: `Log not found: ${e.message}`, log_path: logPath });
+  }
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`HomeOS MCP server v1.3 running on port ${PORT}`);
