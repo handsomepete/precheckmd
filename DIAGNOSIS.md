@@ -174,18 +174,50 @@ changes to existing tool behavior or signatures.
 
 ## Outstanding TODOs
 
-- `mcp/lib/briefStore.js`: the "is this draft a brief" detection is a
-  subject-line heuristic (`/morning brief/i`, `/evening brief/i`, `/\bbrief\b/i`)
-  because `cowork.main` (which actually calls `create_gmail_draft`) isn't
-  reachable from this repo to pass an explicit brief-type parameter. If/when
-  that source is added to a repo, replace the heuristic with an explicit
-  argument from that pipeline.
+- ~~`mcp/lib/briefStore.js`: the "is this draft a brief" detection is a
+  subject-line heuristic~~ — **partially resolved**: `create_gmail_draft` now
+  accepts an explicit `brief_type` argument that bypasses the heuristic
+  entirely when passed (see INTEGRATION.md §4). The heuristic itself is
+  still in the code as a fallback until `cowork.main` is actually updated to
+  pass it on every call — don't delete `detectBriefType()` until that's
+  confirmed live.
 - HA root cause is undiagnosed pending the live commands above being run on
   the Hetzner box — this document only prepared the diagnostic steps and
   fixed the brief's error handling around it.
-- Consider having `cowork.main` call the new `get_upcoming_bills`,
-  `get_property_status`, and `get_linear_focus` tools directly (instead of
-  the raw `get_scheduled_transactions`/`get_home_state`/`get_linear_urgent`
-  it presumably calls today) once its source is accessible, so the
-  reconciliation/consolidation/fallback logic is actually exercised in
-  production rather than just available.
+- ~~Consider having `cowork.main` call the new tools directly~~ — **spec'd**:
+  see INTEGRATION.md for the exact request/response shape and rendering
+  rules for wiring `get_upcoming_bills`, `get_property_status`, and
+  `get_linear_focus` into `cowork.main`. Still needs to actually be done on
+  the box; nothing in this repo can do that part.
+- See SECURITY.md's "Judgment call" callouts for a few items deliberately
+  left as-is (auth-optional-when-unset design, `/mcp`'s error-message
+  verbosity, no prompt-injection detection beyond text hygiene) — these were
+  reviewed and are documented decisions, not gaps.
+
+## Changelog
+
+**2026-07-08, round 2 (security review + integration spec):**
+- Fixed: `POST /mcp` had no auth middleware at all — the actual MCP
+  tool-call endpoint (every YNAB/Linear/HA/Gmail/Airtable tool, including
+  mutating ones) was reachable with zero credentials while every other
+  route was already gated. Now uses the same `auth` middleware as the rest
+  of the server.
+- Fixed: `briefs/:filename` allowlist tightened to
+  `YYYY-MM-DD-(morning|evening).md` only, plus a resolved-path containment
+  check as defense-in-depth, plus a traversal test battery (unit and, now,
+  real-HTTP end-to-end).
+- Fixed: external payee names / Linear issue titles are now run through
+  `sanitizeText()` (strips control chars incl. newlines/NUL, bounds length)
+  before leaving `get_upcoming_bills`/`get_linear_focus`.
+- Fixed: `get_linear_focus`'s `pinned_issue_id` and `create_gmail_draft`'s
+  new `brief_type` argument now have basic type/value validation.
+- Added: `create_gmail_draft` accepts an explicit `brief_type` argument.
+- Added: SECURITY.md (full route/auth/sensitivity table + judgment calls),
+  INTEGRATION.md (cowork.main wiring spec), and
+  `mcp/test/integration/http.test.js` (real end-to-end HTTP tests: auth
+  enforcement, traversal rejection, happy-path serving, POST /mcp tool call).
+- Test count: 44 Node tests (was 27), 14 Python tests (unchanged), all green.
+
+**2026-07-08, round 1 (original four fixes):** see the git log for this
+branch's first five commits — YNAB reconciliation, HA consolidation, Linear
+focus fallback, brief dual-write, and this document's original diagnosis.
