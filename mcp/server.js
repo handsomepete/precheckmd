@@ -33,7 +33,22 @@ app.use(cors());
 
 const PORT = process.env.PORT || 3848;
 const BEARER_TOKEN = process.env.BEARER_TOKEN;
+const ALLOW_INSECURE_LOCAL = process.env.ALLOW_INSECURE_LOCAL === 'true';
 const BRIEFS_DIR = process.env.BRIEFS_DIR || path.join(__dirname, '..', 'briefs');
+
+// ─── Fail-closed auth: refuse to start without a bearer token ────────────────
+// The only escape hatch is an explicit ALLOW_INSECURE_LOCAL=true, which also
+// forces binding to 127.0.0.1 only (never 0.0.0.0) — there is no silent
+// "auth disabled" default. See SECURITY.md / RUNBOOK.md.
+if (!BEARER_TOKEN && !ALLOW_INSECURE_LOCAL) {
+  console.error('FATAL: BEARER_TOKEN is not set. Refusing to start without authentication.');
+  console.error('Set BEARER_TOKEN in the environment, or set ALLOW_INSECURE_LOCAL=true for local-only dev (binds to 127.0.0.1 only, still no auth — never use in production).');
+  process.exit(1);
+}
+if (!BEARER_TOKEN && ALLOW_INSECURE_LOCAL) {
+  console.warn('WARNING: ALLOW_INSECURE_LOCAL=true and BEARER_TOKEN is unset — running WITHOUT auth, bound to 127.0.0.1 only. Do not use this in production.');
+}
+const BIND_HOST = (!BEARER_TOKEN && ALLOW_INSECURE_LOCAL) ? '127.0.0.1' : '0.0.0.0';
 
 // ─── Staleness tracking ───────────────────────────────────────────────────────
 const sourceStatus = {
@@ -85,7 +100,10 @@ const TOOL_SOURCE = {
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
 function auth(req, res, next) {
-  if (!BEARER_TOKEN) return next();
+  // The only bypass is the explicit, loudly-logged ALLOW_INSECURE_LOCAL dev
+  // escape hatch above (which also forces 127.0.0.1-only binding) — there is
+  // no silent "auth disabled when BEARER_TOKEN is unset" path anymore.
+  if (!BEARER_TOKEN && ALLOW_INSECURE_LOCAL) return next();
   const header = req.headers['authorization'];
   if (!header || header !== `Bearer ${BEARER_TOKEN}`) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -983,8 +1001,8 @@ app.post('/mcp', auth, async (req, res) => {
 
 app.get('/mcp', (req, res) => res.status(405).json({ error: 'Use POST for MCP' }));
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`HomeOS MCP server v1.3 running on port ${PORT}`);
-  console.log(`Bearer auth: ${BEARER_TOKEN ? 'enabled' : 'DISABLED'}`);
+app.listen(PORT, BIND_HOST, () => {
+  console.log(`HomeOS MCP server v1.3 running on ${BIND_HOST}:${PORT}`);
+  console.log(`Bearer auth: ${BEARER_TOKEN ? 'enabled' : 'DISABLED (ALLOW_INSECURE_LOCAL=true)'}`);
   console.log(`Tools: ${MCP_TOOLS.length}`);
 });
