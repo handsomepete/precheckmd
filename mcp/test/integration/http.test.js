@@ -41,21 +41,44 @@ async function waitForReady(baseUrl, deadline) {
   throw new Error(`server at ${baseUrl} did not become ready in time`);
 }
 
-async function startServer({ port, briefsDir }) {
-  const child = spawn(process.execPath, [SERVER_PATH], {
+// Builds the child's env from a clean base (not this test process's real
+// env) plus explicit overrides. Passing `undefined` for a key omits it
+// entirely, so tests can spawn the server with BEARER_TOKEN truly unset
+// rather than just empty-string.
+function buildEnv(overrides = {}) {
+  const env = {
+    ...process.env,
+    BEARER_TOKEN,
+    // Deliberately no YNAB/LINEAR/HA/GMAIL/AIRTABLE credentials.
+    ...overrides,
+  };
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete env[key];
+  }
+  return env;
+}
+
+function spawnServer(env) {
+  return spawn(process.execPath, [SERVER_PATH], {
     cwd: path.join(__dirname, '..', '..'),
-    env: {
-      ...process.env,
-      PORT: String(port),
-      BEARER_TOKEN,
-      BRIEFS_DIR: briefsDir,
-      // Deliberately no YNAB/LINEAR/HA/GMAIL/AIRTABLE credentials.
-    },
+    env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+}
+
+function captureOutput(child) {
+  const chunks = { stdout: '', stderr: '' };
+  child.stdout.on('data', (d) => { chunks.stdout += d.toString(); });
+  child.stderr.on('data', (d) => { chunks.stderr += d.toString(); });
+  return chunks;
+}
+
+async function startServer({ port, briefsDir, env: envOverrides = {} }) {
+  const child = spawnServer(buildEnv({ PORT: String(port), BRIEFS_DIR: briefsDir, ...envOverrides }));
+  const output = captureOutput(child);
   const baseUrl = `http://127.0.0.1:${port}`;
   await waitForReady(baseUrl, Date.now() + READY_TIMEOUT_MS);
-  return { child, baseUrl };
+  return { child, baseUrl, output };
 }
 
 function stopServer(child) {
@@ -66,9 +89,57 @@ function stopServer(child) {
   });
 }
 
+function waitForExit(child, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`process did not exit within ${timeoutMs}ms`));
+    }, timeoutMs);
+    child.once('exit', (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal });
+    });
+  });
+}
+
 function randomPort() {
   return 20000 + Math.floor(Math.random() * 20000);
 }
+
+test('server refuses to start when BEARER_TOKEN is unset (fail-closed)', async () => {
+  const child = spawnServer(buildEnv({
+    PORT: String(randomPort()),
+    BEARER_TOKEN: undefined,
+    ALLOW_INSECURE_LOCAL: undefined,
+  }));
+  const output = captureOutput(child);
+
+  const { code } = await waitForExit(child, READY_TIMEOUT_MS);
+
+  assert.equal(code, 1);
+  assert.match(output.stderr, /FATAL: BEARER_TOKEN is not set/);
+});
+
+test('ALLOW_INSECURE_LOCAL=true is the only way to start without a token, and it binds to 127.0.0.1 only', async (t) => {
+  const port = randomPort();
+  const child = spawnServer(buildEnv({
+    PORT: String(port),
+    BEARER_TOKEN: undefined,
+    ALLOW_INSECURE_LOCAL: 'true',
+  }));
+  const output = captureOutput(child);
+  t.after(() => stopServer(child));
+
+  const baseUrl = `http://127.0.0.1:${port}`;
+  await waitForReady(baseUrl, Date.now() + READY_TIMEOUT_MS);
+
+  // No Authorization header at all — this mode has no token to check.
+  const res = await fetch(`${baseUrl}/health`);
+  assert.equal(res.status, 200);
+
+  assert.match(output.stdout, /running on 127\.0\.0\.1:/);
+  assert.match(output.stdout, /Bearer auth: DISABLED/);
+  assert.match(output.stderr, /WARNING:.*running WITHOUT auth/);
+});
 
 test('auth + traversal + happy-path brief serving, end to end', async (t) => {
   const briefsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'briefs-http-test-'));

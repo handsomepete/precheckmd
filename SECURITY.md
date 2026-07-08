@@ -35,20 +35,28 @@ credentials, regardless of `BEARER_TOKEN` being configured.
 middleware every other route already uses. No behavior change for a client
 that already sends `Authorization: Bearer <BEARER_TOKEN>` (which any correctly
 configured MCP client, including this Claude session's PersonalMCP2
-connection, already does). Still a no-op if `BEARER_TOKEN` is unset — see
-judgment call below.
+connection, already does). At the time this was written, the server still
+had a silent "auth optional" fallback when `BEARER_TOKEN` was unset — see
+"Fail-closed auth" below, which supersedes that.
 
-### Judgment call: auth is fully optional when `BEARER_TOKEN` is unset
+### Fail-closed auth (supersedes the earlier "auth is optional" judgment call)
 
-`function auth(req, res, next) { if (!BEARER_TOKEN) return next(); ... }` —
-if the box's `.env` doesn't set `BEARER_TOKEN`, every route (including
-`/mcp` after this fix) is completely open. This is pre-existing,
-intentional-looking behavior (the startup log explicitly prints `Bearer
-auth: DISABLED` so an operator can notice), and I did not change it: making
-auth mandatory could lock the box out if `BEARER_TOKEN` genuinely isn't set
-there yet, and I have no way to verify that from this repo. **Recommendation
-(not enforced by code):** confirm `BEARER_TOKEN` is set in the box's `.env`
-and treat "Bearer auth: DISABLED" in the startup log as a stop-ship signal.
+The judgment call originally documented here — "leave `BEARER_TOKEN` optional
+since making it mandatory could lock the box out" — was revisited and
+reversed: the server now **refuses to start at all** if `BEARER_TOKEN` is
+unset, logging a fatal error and exiting non-zero. There is no more silent
+"auth disabled" runtime state.
+
+The only escape hatch is an explicit `ALLOW_INSECURE_LOCAL=true`, which:
+- still runs with no auth (there's no token to check against), but
+- forces binding to `127.0.0.1` only (never `0.0.0.0`), and
+- logs a loud `WARNING: ... running WITHOUT auth ...` line on startup.
+
+This means a deploy that hasn't set `BEARER_TOKEN` yet will fail to start
+rather than silently serving unauthenticated on the network — see
+RUNBOOK.md for exactly what to check before restarting the service on the
+box, since this is the one change in this branch that can turn into an
+outage if the box's `.env` doesn't already have `BEARER_TOKEN` set.
 
 ### Judgment call: `/` (root) is unauthenticated
 
