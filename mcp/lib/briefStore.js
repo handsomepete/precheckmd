@@ -20,13 +20,22 @@
 const fs = require('fs');
 const path = require('path');
 
-const FILENAME_PATTERN = /^\d{4}-\d{2}-\d{2}-(morning|evening|brief)\.md$/;
+// Strict allowlist, not a denylist: the whole string must match exactly
+// this shape, so no "../", encoded traversal (e.g. Express decoding a
+// %2F-in-segment into a literal "/"), absolute path, or null byte can ever
+// satisfy it — there's no character class here that permits anything but
+// digits, a literal "-", "morning"/"evening", and ".md". See SECURITY.md.
+const FILENAME_PATTERN = /^\d{4}-\d{2}-\d{2}-(morning|evening)\.md$/;
 
 function detectBriefType(subject) {
   if (!subject) return null;
   if (/morning brief/i.test(subject)) return 'morning';
   if (/evening brief/i.test(subject)) return 'evening';
-  if (/\bbrief\b/i.test(subject)) return 'brief';
+  // Deliberately no generic "brief" fallback: run_brief only ever produces
+  // 'morning' or 'evening' (see mcp/server.js runBrief), so a looser match
+  // like /\bbrief\b/i just widened the false-positive surface for
+  // persisting non-brief emails without enabling any real caller. See
+  // SECURITY.md for the full reasoning.
   return null;
 }
 
@@ -38,13 +47,25 @@ function todayIsoDate(now = new Date()) {
   return now.toISOString().slice(0, 10);
 }
 
+// Belt-and-suspenders on top of the allowlist above: even if FILENAME_PATTERN
+// were ever loosened, resolve both paths and require the result to still be
+// directly inside briefsDir before touching the filesystem.
+function assertInsideBriefsDir(briefsDir, filePath) {
+  const resolvedDir = path.resolve(briefsDir) + path.sep;
+  const resolvedFile = path.resolve(filePath);
+  if (!resolvedFile.startsWith(resolvedDir)) {
+    throw new Error('resolved path escapes briefs directory');
+  }
+}
+
 function saveBriefFile(briefsDir, { type, date, body }) {
-  if (!FILENAME_PATTERN.test(briefFilename(type, date))) {
+  const filename = briefFilename(type, date);
+  if (!FILENAME_PATTERN.test(filename)) {
     throw new Error(`invalid brief type/date: ${type} ${date}`);
   }
-  fs.mkdirSync(briefsDir, { recursive: true });
-  const filename = briefFilename(type, date);
   const filePath = path.join(briefsDir, filename);
+  assertInsideBriefsDir(briefsDir, filePath);
+  fs.mkdirSync(briefsDir, { recursive: true });
   fs.writeFileSync(filePath, body, 'utf8');
   return { filename, path: filePath };
 }
@@ -54,6 +75,7 @@ function readBriefFile(briefsDir, filename) {
     throw new Error('invalid brief filename');
   }
   const filePath = path.join(briefsDir, filename);
+  assertInsideBriefsDir(briefsDir, filePath);
   return fs.readFileSync(filePath, 'utf8');
 }
 

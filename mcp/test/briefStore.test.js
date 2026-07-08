@@ -21,7 +21,9 @@ function tmpDir() {
 test('detectBriefType recognizes morning/evening subjects and ignores unrelated ones', () => {
   assert.equal(detectBriefType('Your Morning Brief — July 8'), 'morning');
   assert.equal(detectBriefType('Evening Brief: wrap-up'), 'evening');
-  assert.equal(detectBriefType('Weekly brief'), 'brief');
+  // No generic "brief" fallback (tightened per SECURITY.md): only the two
+  // types run_brief actually produces are recognized.
+  assert.equal(detectBriefType('Weekly brief'), null);
   assert.equal(detectBriefType('Re: dinner tonight?'), null);
   assert.equal(detectBriefType(''), null);
 });
@@ -40,13 +42,42 @@ test('saveBriefFile writes a dated markdown file and rejects bad types', () => {
   assert.throws(() => saveBriefFile(dir, { type: '../../etc', date: '2026-07-08', body: 'x' }));
 });
 
-test('readBriefFile round-trips and rejects path traversal filenames', () => {
+test('readBriefFile round-trips a well-formed filename', () => {
   const dir = tmpDir();
   saveBriefFile(dir, { type: 'evening', date: '2026-07-08', body: 'evening content' });
 
   assert.equal(readBriefFile(dir, '2026-07-08-evening.md'), 'evening content');
-  assert.throws(() => readBriefFile(dir, '../../../etc/passwd'));
-  assert.throws(() => readBriefFile(dir, '2026-07-08-evening.md/../../secret'));
+});
+
+test('readBriefFile rejects path traversal attempts of every shape', () => {
+  const dir = tmpDir();
+  saveBriefFile(dir, { type: 'evening', date: '2026-07-08', body: 'evening content' });
+  // Plant a real secret one level above briefsDir to prove nothing can reach it.
+  const secretPath = path.join(dir, '..', 'secret.txt');
+  fs.writeFileSync(secretPath, 'top secret');
+
+  const traversalAttempts = [
+    '../../../etc/passwd',
+    '..%2f..%2fetc%2fpasswd',                  // encoded traversal, in case it reaches us undecoded
+    '2026-07-08-evening.md/../../secret.txt',  // trailing traversal off a valid-looking prefix
+    '../secret.txt',
+    '..\\..\\secret.txt',                      // backslash traversal
+    '/etc/passwd',                              // absolute path
+    '2026-07-08-evening.md\0.txt',          // embedded null byte
+    '2026-07-08-morning.md.evil',
+    '2026-07-08-morning',
+    '',
+  ];
+
+  for (const attempt of traversalAttempts) {
+    assert.throws(
+      () => readBriefFile(dir, attempt),
+      undefined,
+      `expected readBriefFile to reject: ${JSON.stringify(attempt)}`
+    );
+  }
+
+  fs.unlinkSync(secretPath);
 });
 
 test('listBriefFiles returns only well-formed brief filenames, newest first', () => {
