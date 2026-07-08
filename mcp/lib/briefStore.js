@@ -6,13 +6,13 @@
  * This persists the same body to a plain dated file the MCP server can
  * serve over HTTP, e.g. briefs/2026-07-08-morning.md.
  *
- * TODO(HOME-447): the actual brief pipeline (cowork.main) lives outside
- * this repo and isn't reachable from here, so there's no way to have it
- * call save_brief_file directly with an explicit brief type. As a
- * conservative stopgap, create_gmail_draft (the one call every brief run
- * makes) detects "is this a brief" from the subject line below. If
- * cowork.main's source becomes available, replace this heuristic with an
- * explicit call/parameter from that pipeline instead.
+ * create_gmail_draft now accepts an optional explicit `brief_type` argument
+ * ('morning'|'evening'). When cowork.main passes it, that's used directly
+ * and the subject-line heuristic below is skipped entirely. The heuristic
+ * remains as a fallback for callers that don't pass brief_type yet (i.e.
+ * cowork.main hasn't been updated — see INTEGRATION.md). Once cowork.main
+ * passes brief_type on every brief-creating call, detectBriefType() and its
+ * subject-matching can be deleted in a follow-up.
  */
 
 'use strict';
@@ -84,13 +84,19 @@ function listBriefFiles(briefsDir) {
   return fs.readdirSync(briefsDir).filter((f) => FILENAME_PATTERN.test(f)).sort().reverse();
 }
 
+const EXPLICIT_TYPES = new Set(['morning', 'evening']);
+
 /**
  * Given the same args passed to create_gmail_draft, decide whether (and
  * where) to also persist a file copy. Returns null when this doesn't look
  * like a brief email.
+ *
+ * If `brief_type` is passed and is 'morning' or 'evening', it's used
+ * directly and the subject-line heuristic is skipped. Otherwise falls back
+ * to detectBriefType(subject).
  */
-function maybePersistBriefFromDraft(briefsDir, { subject, body_text, body_html }, now = new Date()) {
-  const type = detectBriefType(subject);
+function maybePersistBriefFromDraft(briefsDir, { subject, body_text, body_html, brief_type }, now = new Date()) {
+  const type = EXPLICIT_TYPES.has(brief_type) ? brief_type : detectBriefType(subject);
   if (!type) return null;
   const body = body_text || (body_html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   return saveBriefFile(briefsDir, { type, date: todayIsoDate(now), body });

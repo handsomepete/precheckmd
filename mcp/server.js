@@ -627,7 +627,7 @@ async function getEmail({ uid }) {
   } finally { lock.release(); await client.logout(); }
 }
 
-async function createGmailDraft({ to, subject, body_html, body_text }) {
+async function createGmailDraft({ to, subject, body_html, body_text, brief_type }) {
   if (!GMAIL_USER || !GMAIL_PASS) throw new Error('GMAIL_USER or GMAIL_APP_PASSWORD not set');
   const client = makeImapClient();
   await client.connect();
@@ -638,7 +638,7 @@ async function createGmailDraft({ to, subject, body_html, body_text }) {
     markOk('gmail');
     let briefFile = null;
     try {
-      const persisted = maybePersistBriefFromDraft(BRIEFS_DIR, { subject, body_text, body_html });
+      const persisted = maybePersistBriefFromDraft(BRIEFS_DIR, { subject, body_text, body_html, brief_type });
       if (persisted) briefFile = persisted.filename;
     } catch (fileErr) {
       // Never let the file-persistence stopgap break the Gmail draft itself.
@@ -855,7 +855,7 @@ const MCP_TOOLS = [
   // ── Gmail ─────────────────────────────────────────────────────────────────────
   { name: 'search_gmail', description: 'Search Gmail INBOX for emails since a date.', inputSchema: { type: 'object', properties: { since_iso: { type: 'string' }, senders: { type: 'array', items: { type: 'string' } }, max_results: { type: 'number' } } } },
   { name: 'get_email', description: 'Fetch the full body of an email by IMAP UID', inputSchema: { type: 'object', properties: { uid: { type: 'number' } }, required: ['uid'] } },
-  { name: 'create_gmail_draft', description: 'Create a Gmail draft. Do NOT send — draft only.', inputSchema: { type: 'object', properties: { to: { type: 'string' }, subject: { type: 'string' }, body_html: { type: 'string' }, body_text: { type: 'string' } }, required: ['to', 'subject'] } },
+  { name: 'create_gmail_draft', description: 'Create a Gmail draft. Do NOT send — draft only. If this is a morning/evening brief, pass brief_type so it is also persisted to briefs/YYYY-MM-DD-{brief_type}.md (served via GET /briefs/:filename) instead of relying on subject-line detection.', inputSchema: { type: 'object', properties: { to: { type: 'string' }, subject: { type: 'string' }, body_html: { type: 'string' }, body_text: { type: 'string' }, brief_type: { type: 'string', enum: ['morning', 'evening'], description: 'Set when this draft is a morning/evening brief, so it is dual-written to a local file instead of relying on subject-line detection.' } }, required: ['to', 'subject'] } },
   // ── Airtable writes ───────────────────────────────────────────────────────────
   { name: 'list_all_jobs', description: 'Get ALL Airtable job records including Skip, Rejected, Done', inputSchema: { type: 'object', properties: {} } },
   { name: 'create_job', description: 'Create a new job record in Airtable', inputSchema: { type: 'object', properties: { company: { type: 'string' }, status: { type: 'string' }, notes: { type: 'string' } }, required: ['company', 'status'] } },
@@ -931,7 +931,7 @@ function _createMcpServer() {
         // ── Gmail ──────────────────────────────────────────────────────────────
         case 'search_gmail':       { data = await searchGmail(args); break; }
         case 'get_email':          { data = await getEmail(args); break; }
-        case 'create_gmail_draft': { data = await createGmailDraft(args); break; }
+        case 'create_gmail_draft': { if (args.brief_type !== undefined && !['morning', 'evening'].includes(args.brief_type)) throw new Error("brief_type must be 'morning' or 'evening'"); data = await createGmailDraft(args); break; }
         // ── Airtable ───────────────────────────────────────────────────────────
         case 'list_all_jobs':  { data = { records: await getAllJobs() }; markOk('airtable'); break; }
         case 'create_job':     { data = await createJob(args); break; }

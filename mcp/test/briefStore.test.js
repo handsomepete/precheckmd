@@ -126,3 +126,29 @@ test('maybePersistBriefFromDraft strips HTML when only body_html is provided', (
   );
   assert.equal(readBriefFile(dir, '2026-07-08-evening.md'), 'All quiet tonight .');
 });
+
+test('maybePersistBriefFromDraft prefers an explicit brief_type over the subject heuristic', () => {
+  const dir = tmpDir();
+  const now = new Date('2026-07-08T13:00:00Z');
+
+  // Subject doesn't match the heuristic at all, but brief_type is explicit.
+  const result = maybePersistBriefFromDraft(
+    dir,
+    { subject: 'Good morning!', body_text: 'Explicit type wins.', brief_type: 'morning' },
+    now
+  );
+  assert.equal(result.filename, '2026-07-08-morning.md');
+  assert.equal(readBriefFile(dir, '2026-07-08-morning.md'), 'Explicit type wins.');
+});
+
+test('maybePersistBriefFromDraft ignores an invalid brief_type and falls back to the heuristic', () => {
+  const dir = tmpDir();
+  const now = new Date('2026-07-08T13:00:00Z');
+
+  const result = maybePersistBriefFromDraft(
+    dir,
+    { subject: 'Evening Brief', body_text: 'Falls back.', brief_type: 'weekly' },
+    now
+  );
+  assert.equal(result.filename, '2026-07-08-evening.md');
+});
