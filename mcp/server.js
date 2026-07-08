@@ -969,7 +969,7 @@ function _createMcpServer() {
   return mcp;
 }
 
-app.post('/mcp', async (req, res) => {
+app.post('/mcp', auth, async (req, res) => {
   try {
     const mcp = _createMcpServer();
     const transport = new _StreamableHTTP({ sessionIdGenerator: undefined });
