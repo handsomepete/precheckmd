@@ -941,7 +941,7 @@ function _createMcpServer() {
         case 'create_linear_issue': { data = await createLinearIssue(args); break; }
         case 'update_linear_issue': { data = await updateLinearIssue(args); break; }
         case 'add_linear_comment':  { data = await addLinearComment(args); break; }
-        case 'get_linear_focus':    { data = await getLinearFocus(args.pinned_issue_id); markOk('linear'); break; }
+        case 'get_linear_focus':    { if (args.pinned_issue_id !== undefined && (typeof args.pinned_issue_id !== 'string' || args.pinned_issue_id.length > 200)) throw new Error('pinned_issue_id must be a string of at most 200 characters'); data = await getLinearFocus(args.pinned_issue_id); markOk('linear'); break; }
         // ── Home Assistant ─────────────────────────────────────────────────────
         case 'get_home_state': {
           const states = await haGet('/api/states');
