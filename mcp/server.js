@@ -19,6 +19,12 @@ const axios = require('axios');
 const cors = require('cors');
 const { ImapFlow } = require('imapflow');
 const { spawn } = require('child_process');
+const path = require('path');
+
+const { reconcileScheduledTransactions } = require('./lib/reconciliation');
+const { resolveLinearFocus } = require('./lib/linearFocus');
+const { buildPropertyStatus, checkHaHealth } = require('./lib/propertyStatus');
+const { maybePersistBriefFromDraft, listBriefFiles, readBriefFile } = require('./lib/briefStore');
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -26,6 +32,7 @@ app.use(cors());
 
 const PORT = process.env.PORT || 3848;
 const BEARER_TOKEN = process.env.BEARER_TOKEN;
+const BRIEFS_DIR = process.env.BRIEFS_DIR || path.join(__dirname, '..', 'briefs');
 
 // ─── Staleness tracking ───────────────────────────────────────────────────────
 const sourceStatus = {
@@ -51,6 +58,29 @@ function isStale(source, thresholdSeconds = 86400) {
   if (!s.last_updated) return true;
   return (Date.now() - new Date(s.last_updated).getTime()) > thresholdSeconds * 1000;
 }
+
+// Maps tool name -> sourceStatus key, so a thrown error can be recorded via
+// markFailed(). Previously markFailed() was defined but never called, so a
+// source that failed every time (e.g. home_assistant during a TLS outage)
+// stayed at its initial { ok: false, last_updated: null } forever instead of
+// showing a real error/timestamp in get_health.
+const TOOL_SOURCE = {
+  get_pipeline: 'airtable', get_nox_leads: 'airtable', list_all_jobs: 'airtable',
+  create_job: 'airtable', update_job: 'airtable',
+  get_linear_urgent: 'linear', get_homestead: 'linear', close_linear_issue: 'linear',
+  list_linear_issues: 'linear', create_linear_issue: 'linear', update_linear_issue: 'linear',
+  add_linear_comment: 'linear', get_linear_focus: 'linear',
+  get_calendar: 'google_calendar',
+  get_finances: 'ynab', get_accounts: 'ynab', get_transactions: 'ynab',
+  get_account_transactions: 'ynab', get_transaction: 'ynab', get_categories: 'ynab',
+  get_payees: 'ynab', get_scheduled_transactions: 'ynab', get_months: 'ynab',
+  get_month: 'ynab', get_budget_settings: 'ynab', create_transaction: 'ynab',
+  update_transaction: 'ynab', update_transactions_bulk: 'ynab', delete_transaction: 'ynab',
+  create_scheduled_transaction: 'ynab', update_category_budget: 'ynab', get_upcoming_bills: 'ynab',
+  search_gmail: 'gmail', get_email: 'gmail', create_gmail_draft: 'gmail',
+  get_home_state: 'home_assistant', control_home: 'home_assistant',
+  get_home_automations: 'home_assistant', get_property_status: 'home_assistant',
+};
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
 function auth(req, res, next) {
@@ -122,6 +152,30 @@ async function resolveLinearId(identifierOrId) {
   );
   if (!data.issue) throw new Error(`Linear issue not found: ${identifierOrId}`);
   return data.issue.id;
+}
+
+async function getLinearIssueById(identifierOrId) {
+  const data = await linearQuery(
+    `query($id: String!) { issue(id: $id) { id identifier title priority dueDate project { name } url } }`,
+    { id: identifierOrId }
+  );
+  return data.issue || null;
+}
+
+async function getLinearFocus(pinnedIssueId) {
+  const result = await resolveLinearFocus({
+    pinnedIssueId,
+    fetchIssueById: getLinearIssueById,
+    getUrgentIssues: getLinearUrgentIssues,
+    logger: console,
+  });
+  return {
+    issue: result.issue
+      ? { id: result.issue.identifier || result.issue.id, title: result.issue.title, priority: result.issue.priority, due: result.issue.dueDate, url: result.issue.url }
+      : null,
+    source: result.source,
+    dangling_issue_id: result.dangling_issue_id,
+  };
 }
 
 async function getLinearWorkflowStates() {
@@ -413,6 +467,14 @@ async function getYnabScheduledTransactions() {
   }));
 }
 
+async function getYnabUpcomingBills() {
+  const scheduled = await getYnabScheduledTransactions();
+  const since = new Date();
+  since.setDate(since.getDate() - 10);
+  const recentCleared = await getYnabTransactions({ since: since.toISOString().slice(0, 10) });
+  return reconcileScheduledTransactions(scheduled, recentCleared, { windowDays: 10, toleranceRatio: 0.25 });
+}
+
 async function createYnabTransaction({ account_id, date, payee_name, amount, category_id, memo }) {
   const body = {
     transaction: {
@@ -573,7 +635,15 @@ async function createGmailDraft({ to, subject, body_html, body_text }) {
     const message = [`MIME-Version: 1.0`, `Date: ${new Date().toUTCString()}`, `From: ${GMAIL_USER}`, `To: ${to}`, `Subject: ${subject}`, `Content-Type: text/html; charset=UTF-8`, ``, html].join('\r\n');
     await client.append('[Google Mail]/Drafts', Buffer.from(message, 'utf8'), ['\\Draft', '\\Seen']);
     markOk('gmail');
-    return { ok: true, to, subject };
+    let briefFile = null;
+    try {
+      const persisted = maybePersistBriefFromDraft(BRIEFS_DIR, { subject, body_text, body_html });
+      if (persisted) briefFile = persisted.filename;
+    } catch (fileErr) {
+      // Never let the file-persistence stopgap break the Gmail draft itself.
+      console.error(`[briefStore] failed to persist brief file: ${fileErr.message}`);
+    }
+    return { ok: true, to, subject, ...(briefFile ? { brief_file: briefFile } : {}) };
   } finally { await client.logout(); }
 }
 
@@ -714,6 +784,16 @@ async function haCallService(service, entityId, extraData = {}) {
   return haPost(`/api/services/${domain}/${svc}`, { entity_id: entityId, ...extraData });
 }
 
+async function getPropertyStatus() {
+  const result = await buildPropertyStatus({
+    haHealthCheck: () => checkHaHealth(haGet),
+    getAllStates: () => haGet('/api/states'),
+  });
+  if (result.ok) markOk('home_assistant');
+  else markFailed('home_assistant', result.error);
+  return result;
+}
+
 // ─── REST routes ──────────────────────────────────────────────────────────────
 app.get('/health', auth, async (req, res) => {
   const anyDown = Object.values(sourceStatus).some(s => !s.ok);
@@ -721,6 +801,17 @@ app.get('/health', auth, async (req, res) => {
 });
 
 app.get('/', (req, res) => { res.json({ name: 'homeos-mcp', version: '1.3.0', tools: MCP_TOOLS.map(t => t.name) }); });
+
+app.get('/briefs', auth, (req, res) => {
+  res.json({ briefs: listBriefFiles(BRIEFS_DIR) });
+});
+app.get('/briefs/:filename', auth, (req, res) => {
+  try {
+    res.type('text/markdown').send(readBriefFile(BRIEFS_DIR, req.params.filename));
+  } catch (err) {
+    res.status(404).json({ error: 'brief not found' });
+  }
+});
 
 let bankingCache = null;
 app.get('/finances/banking', auth, (req, res) => {
@@ -750,6 +841,7 @@ const MCP_TOOLS = [
   { name: 'get_categories', description: 'Get YNAB categories with budgeted/activity/balance', inputSchema: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM, defaults to current' } } } },
   { name: 'get_payees', description: 'Get all YNAB payees', inputSchema: { type: 'object', properties: {} } },
   { name: 'get_scheduled_transactions', description: 'Get upcoming YNAB scheduled transactions', inputSchema: { type: 'object', properties: {} } },
+  { name: 'get_upcoming_bills', description: 'Get upcoming YNAB scheduled transactions reconciled against recently cleared transactions. A scheduled bill already cleared (same payee, amount within +/-25%, last 10 days) is reported as status "paid" with the actual amount instead of "due" with the stale scheduled amount.', inputSchema: { type: 'object', properties: {} } },
   { name: 'get_months', description: 'Get month-by-month YNAB budget summary history', inputSchema: { type: 'object', properties: {} } },
   { name: 'get_month', description: 'Get full detail for a single YNAB budget month including all category balances', inputSchema: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM, e.g. "2025-06"' } }, required: ['month'] } },
   { name: 'get_budget_settings', description: 'Get YNAB budget settings: date format and currency format', inputSchema: { type: 'object', properties: {} } },
@@ -773,10 +865,12 @@ const MCP_TOOLS = [
   { name: 'create_linear_issue', description: 'Create a new Linear issue', inputSchema: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, project_id: { type: 'string' }, priority: { type: 'number' }, parent_id: { type: 'string' } }, required: ['title'] } },
   { name: 'update_linear_issue', description: 'Update the status of a Linear issue', inputSchema: { type: 'object', properties: { issue_id: { type: 'string' }, state_type: { type: 'string' }, comment: { type: 'string' } }, required: ['issue_id', 'state_type'] } },
   { name: 'add_linear_comment', description: 'Add a comment to a Linear issue', inputSchema: { type: 'object', properties: { issue_id: { type: 'string' }, body: { type: 'string' } }, required: ['issue_id', 'body'] } },
+  { name: 'get_linear_focus', description: 'Get today\'s Linear focus issue. Validates the pinned issue still exists before returning it; if it was deleted/archived, falls back to the highest-priority open issue from get_linear_urgent and reports the dangling id for cleanup.', inputSchema: { type: 'object', properties: { pinned_issue_id: { type: 'string', description: 'Previously pinned/selected issue id or identifier (optional)' } } } },
   // ── Home Assistant ────────────────────────────────────────────────────────────
   { name: 'get_home_state', description: 'Get Home Assistant entity states', inputSchema: { type: 'object', properties: { domain: { type: 'string' } } } },
   { name: 'control_home', description: 'Control Home Assistant devices', inputSchema: { type: 'object', properties: { service: { type: 'string' }, entity_id: { type: 'string' }, extra_data: { type: 'object' } }, required: ['service', 'entity_id'] } },
   { name: 'get_home_automations', description: 'List all Home Assistant automations', inputSchema: { type: 'object', properties: {} } },
+  { name: 'get_property_status', description: 'Get the PROPERTY section for the brief: one HA health check gates weather + garage/cover reporting. On failure returns a single consolidated line ("Property status unavailable (HA unreachable)") instead of per-entity socket errors.', inputSchema: { type: 'object', properties: {} } },
   // ── Utility ───────────────────────────────────────────────────────────────────
   { name: 'run_brief', description: 'Trigger a morning or evening brief pipeline', inputSchema: { type: 'object', properties: { type: { type: 'string', enum: ['morning', 'evening'] } }, required: ['type'] } },
   { name: 'fetch_url', description: 'Fetch the text content of a URL (strips HTML)', inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } },
@@ -823,6 +917,7 @@ function _createMcpServer() {
         case 'get_categories':              { data = { categories: await getYnabCategories(args.month) }; markOk('ynab'); break; }
         case 'get_payees':                  { data = { payees: await getYnabPayees() }; markOk('ynab'); break; }
         case 'get_scheduled_transactions':  { data = { scheduled: await getYnabScheduledTransactions() }; markOk('ynab'); break; }
+        case 'get_upcoming_bills':          { data = { bills: await getYnabUpcomingBills() }; markOk('ynab'); break; }
         case 'get_months':                  { data = { months: await getYnabMonths() }; markOk('ynab'); break; }
         case 'get_month':                   { if (!args.month) throw new Error('month required'); data = await getYnabMonth(args.month); markOk('ynab'); break; }
         case 'get_budget_settings':         { data = await getYnabBudgetSettings(); markOk('ynab'); break; }
@@ -845,6 +940,7 @@ function _createMcpServer() {
         case 'create_linear_issue': { data = await createLinearIssue(args); break; }
         case 'update_linear_issue': { data = await updateLinearIssue(args); break; }
         case 'add_linear_comment':  { data = await addLinearComment(args); break; }
+        case 'get_linear_focus':    { data = await getLinearFocus(args.pinned_issue_id); markOk('linear'); break; }
         // ── Home Assistant ─────────────────────────────────────────────────────
         case 'get_home_state': {
           const states = await haGet('/api/states');
@@ -856,6 +952,7 @@ function _createMcpServer() {
         }
         case 'control_home': { if (!args.service || !args.entity_id) throw new Error('service and entity_id required'); const result = await haCallService(args.service, args.entity_id, args.extra_data || {}); markOk('home_assistant'); data = { ok: true, service: args.service, entity_id: args.entity_id, result }; break; }
         case 'get_home_automations': { const states = await haGet('/api/states'); const autos = states.filter(s => s.entity_id.startsWith('automation.')); markOk('home_assistant'); data = { automations: autos.map(a => ({ id: a.entity_id, name: a.attributes.friendly_name || a.entity_id.replace('automation.', ''), state: a.state, last_triggered: a.attributes.last_triggered || null })) }; break; }
+        case 'get_property_status': { data = await getPropertyStatus(); break; }
         // ── Utility ────────────────────────────────────────────────────────────
         case 'fetch_url': { data = await fetchUrl(args); break; }
         case 'run_brief': { data = await runBrief(args); break; }
@@ -863,6 +960,8 @@ function _createMcpServer() {
       }
       return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
     } catch (err) {
+      const source = TOOL_SOURCE[name];
+      if (source) markFailed(source, err.message);
       return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
     }
   });

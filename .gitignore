@@ -13,3 +13,7 @@ build/
 artifacts/
 *.pdf
 *.log
+node_modules/
+
+# Rendered brief bodies contain real personal/financial data — never commit them.
+briefs/*.md
