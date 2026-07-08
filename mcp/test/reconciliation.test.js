@@ -113,6 +113,24 @@ test('uncleared transactions are ignored even if amount/payee match', () => {
   assert.equal(result.status, 'due');
 });
 
+test('reconcileScheduledTransaction sanitizes the payee field on both the due and paid paths', () => {
+  const dueResult = reconcileScheduledTransaction(
+    { id: 'sched-7', payee: 'Evil\nPayee\x00 Inc.  ', amount: -50.0, date_next: '2026-07-10' },
+    [],
+    { now: NOW }
+  );
+  assert.equal(dueResult.status, 'due');
+  assert.equal(dueResult.payee, 'Evil Payee Inc.');
+
+  const paidResult = reconcileScheduledTransaction(
+    { id: 'sched-8', payee: 'Evil\nPayee\x00 Inc.  ', amount: -50.0, date_next: '2026-07-10' },
+    [{ id: 'txn-8', payee: 'Evil\nPayee\x00 Inc.  ', amount: -50.0, date: '2026-07-07', cleared: 'cleared' }],
+    { now: NOW }
+  );
+  assert.equal(paidResult.status, 'paid');
+  assert.equal(paidResult.payee, 'Evil Payee Inc.');
+});
+
 test('reconcileScheduledTransactions maps over a full list', () => {
   const scheduled = [
     { id: 'a', payee: 'Hydro One', amount: -426.0, date_next: '2026-07-10' },

@@ -25,6 +25,7 @@ const { reconcileScheduledTransactions } = require('./lib/reconciliation');
 const { resolveLinearFocus } = require('./lib/linearFocus');
 const { buildPropertyStatus, checkHaHealth } = require('./lib/propertyStatus');
 const { maybePersistBriefFromDraft, listBriefFiles, readBriefFile } = require('./lib/briefStore');
+const { sanitizeText } = require('./lib/sanitize');
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -171,7 +172,7 @@ async function getLinearFocus(pinnedIssueId) {
   });
   return {
     issue: result.issue
-      ? { id: result.issue.identifier || result.issue.id, title: result.issue.title, priority: result.issue.priority, due: result.issue.dueDate, url: result.issue.url }
+      ? { id: result.issue.identifier || result.issue.id, title: sanitizeText(result.issue.title), priority: result.issue.priority, due: result.issue.dueDate, url: result.issue.url }
       : null,
     source: result.source,
     dangling_issue_id: result.dangling_issue_id,

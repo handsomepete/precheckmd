@@ -11,6 +11,8 @@
 
 'use strict';
 
+const { sanitizeText } = require('./sanitize');
+
 const DEFAULT_WINDOW_DAYS = 10;
 const DEFAULT_TOLERANCE_RATIO = 0.25;
 
@@ -64,7 +66,7 @@ function reconcileScheduledTransaction(scheduled, clearedTransactions, opts = {}
     const dueDate = new Date(scheduled.date_next);
     return {
       id: scheduled.id,
-      payee: scheduled.payee,
+      payee: sanitizeText(scheduled.payee),
       status: 'due',
       amount: scheduled.amount,
       due_date: scheduled.date_next,
@@ -83,7 +85,7 @@ function reconcileScheduledTransaction(scheduled, clearedTransactions, opts = {}
 
   return {
     id: scheduled.id,
-    payee: scheduled.payee,
+    payee: sanitizeText(scheduled.payee),
     status: 'paid',
     scheduled_amount: scheduled.amount,
     actual_amount: match.amount,
