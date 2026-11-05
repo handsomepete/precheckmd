@@ -9,10 +9,10 @@ redis==5.2.1
 rq==2.0.0
 pydantic==2.10.3
 pydantic-settings==2.7.0
-python-multipart==0.0.20
+python-multipart==0.0.31
 httpx==0.28.1
 anthropic==0.40.0
 reportlab==4.2.5
-gitpython==3.1.44
+gitpython==3.2.1
 boto3==1.35.88
 mcp[cli]>=1.2.0
